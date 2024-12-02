@@ -169,10 +169,13 @@ public class CameraManager : MonoBehaviour
             yield break;
         }
 
+        // Rotate the frame by 90 degrees
+        Texture2D rotatedFrame = RotateTexture(frame, 90f);
+
         string fileName = $"Frame_{index}_{timestamp:yyyyMMdd_HHmmss}.png";
 
         NativeGallery.Permission permission = NativeGallery.SaveImageToGallery(
-            frame,
+            rotatedFrame,
             "VOJO",
             fileName,
             (success, path) =>
@@ -193,7 +196,39 @@ public class CameraManager : MonoBehaviour
             Debug.LogError("Gallery permission not granted. Cannot save frame.");
         }
 
+        // Clean up the rotated frame texture
+        Destroy(rotatedFrame);
+
         yield return null;
+    }
+
+    private Texture2D RotateTexture(Texture2D originalTexture, float angle)
+    {
+        int width = originalTexture.width;
+        int height = originalTexture.height;
+
+        Texture2D rotatedTexture = new Texture2D(height, width, originalTexture.format, false);
+
+        Color32[] originalPixels = originalTexture.GetPixels32();
+        Color32[] rotatedPixels = new Color32[originalPixels.Length];
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int originalIndex = y * width + x;
+                int rotatedIndex;
+
+                // Apply 90-degree rotation logic (clockwise)
+                rotatedIndex = (width - x - 1) * height + y;
+                rotatedPixels[rotatedIndex] = originalPixels[originalIndex];
+            }
+        }
+
+        rotatedTexture.SetPixels32(rotatedPixels);
+        rotatedTexture.Apply();
+
+        return rotatedTexture;
     }
 
     public void StopCameraFeed()
