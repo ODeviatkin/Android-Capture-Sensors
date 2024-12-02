@@ -96,18 +96,7 @@ public class CameraManager : MonoBehaviour
                     // Get the data as Color32[]
                     var data = request.GetData<Color32>();
 
-                    // Create an array to hold the processed pixels
-                    Color32[] pixels = new Color32[data.Length];
-
-                    // Process the pixels
-                    for (int y = 0; y < height; y++)
-                    {
-                        for (int x = 0; x < width; x++)
-                        {
-                            int index = y * width + x;
-                            pixels[index] = data[index];
-                        }
-                    }
+                    Color32[] pixels = data.ToArray();
 
                     // Create the Texture2D with RGBA32 format
                     var capturedFrame = new Texture2D(width, height, TextureFormat.RGBA32, false);
