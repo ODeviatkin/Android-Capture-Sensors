@@ -1,0 +1,2 @@
+C:\Users\devia\Documents\GitHub\Android-Capture-Sensors\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\CMakeLists.txt
+C:\Users\devia\Documents\GitHub\Android-Capture-Sensors\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\FramePacing\CMakeLists.txt
