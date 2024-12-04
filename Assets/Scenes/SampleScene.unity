@@ -734,7 +734,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   cameraView: {fileID: 5821162}
-  numberOfFramesToCapture: 60
+  numberOfFramesToCapture: 30
   CaptureButton: {fileID: 1592381181}
   CapturingButton: {fileID: 1582251738}
   SavingButton: {fileID: 1133200430}

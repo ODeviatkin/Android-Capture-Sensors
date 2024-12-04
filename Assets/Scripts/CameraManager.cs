@@ -1,3 +1,4 @@
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using System;
@@ -12,13 +13,9 @@ public class CameraManager : MonoBehaviour
 
     private WebCamTexture webCamTexture;
     private RenderTexture renderTexture;
-    private ConcurrentQueue<(Texture2D frame, DateTime timestamp)> frameQueue = new ConcurrentQueue<(Texture2D, DateTime)>();
+    private ConcurrentQueue<(byte[] rawData, DateTime timestamp)> frameQueue = new ConcurrentQueue<(byte[], DateTime)>();
     private bool isCollectingFrames = false; // Initially set to false
     private int frameCount = 0;
-
-    // Variables for FPS calculation
-    private int framesThisSecond = 0;
-    private float fpsTimer = 0f;
 
     [SerializeField] private GameObject CaptureButton;
     [SerializeField] private GameObject CapturingButton;
@@ -31,7 +28,7 @@ public class CameraManager : MonoBehaviour
             string cameraName = WebCamTexture.devices[0].name;
 
             // Initialize the WebCamTexture
-            webCamTexture = new WebCamTexture(cameraName, 1920, 1080, numberOfFramesToCapture);
+            webCamTexture = new WebCamTexture(cameraName, 1920, 1080, 30);
             renderTexture = new RenderTexture(1920, 1080, 0, RenderTextureFormat.ARGB32);
 
             // Assign the camera feed to RawImage for display
@@ -62,20 +59,10 @@ public class CameraManager : MonoBehaviour
 
     void Update()
     {
-        // FPS Calculation
-        fpsTimer += Time.deltaTime;
-        if (fpsTimer >= 1f) // Every second
-        {
-            Debug.Log($"FPS: {framesThisSecond}");
-            framesThisSecond = 0;
-            fpsTimer = 0f;
-        }
-
         if (webCamTexture != null && webCamTexture.isPlaying && isCollectingFrames)
         {
             if (webCamTexture.didUpdateThisFrame && frameQueue.Count < numberOfFramesToCapture)
             {
-                framesThisSecond++;
                 DateTime captureTime = DateTime.Now;
 
                 // Copy the WebCamTexture to a RenderTexture
@@ -90,29 +77,22 @@ public class CameraManager : MonoBehaviour
                         return;
                     }
 
-                    int width = renderTexture.width;
-                    int height = renderTexture.height;
+                    // Get raw byte data from GPU memory
+                    NativeArray<byte> rawData = request.GetData<byte>();
 
-                    // Get the data as Color32[]
-                    var data = request.GetData<Color32>();
+                    // Copy raw data to a byte array for saving
+                    byte[] rawCopy = new byte[rawData.Length];
+                    rawData.CopyTo(rawCopy);
 
-                    Color32[] pixels = data.ToArray();
-
-                    // Create the Texture2D with RGBA32 format
-                    var capturedFrame = new Texture2D(width, height, TextureFormat.RGBA32, false);
-
-                    // Set the pixels and apply
-                    capturedFrame.SetPixels32(pixels);
-                    capturedFrame.Apply();
-
-                    frameQueue.Enqueue((capturedFrame, captureTime));
+                    frameQueue.Enqueue((rawCopy, captureTime));
+                    Debug.Log($"Frame {frameQueue.Count}/{numberOfFramesToCapture} captured at {captureTime:HH:mm:ss.fff}");
                 });
 
-                Debug.Log($"Frame {frameCount + 1}/{numberOfFramesToCapture} captured at {captureTime:HH:mm:ss.fff}");
                 frameCount++;
             }
         }
 
+        // Stop collecting frames if we reach the limit
         if (isCollectingFrames && frameQueue.Count >= numberOfFramesToCapture)
         {
             Debug.Log($"Collected {numberOfFramesToCapture} frames. Stopping collection.");
@@ -135,36 +115,32 @@ public class CameraManager : MonoBehaviour
         int frameIndex = 0;
         CapturingButton.SetActive(false);
         SavingButton.SetActive(true);
-        StopCameraFeed();
 
         while (frameQueue.TryDequeue(out var frameData))
         {
-            yield return SaveFrameToGalleryCoroutine(frameData.frame, frameIndex, frameData.timestamp);
-            Destroy(frameData.frame);
+            yield return SaveFrameToGalleryCoroutine(frameData.rawData, renderTexture.width, renderTexture.height, frameIndex, frameData.timestamp);
             frameIndex++;
         }
-        Debug.Log("Finished saving all frames.");
 
-        RestartCameraFeed();
+        Debug.Log("Finished saving all frames.");
         SavingButton.SetActive(false);
         CaptureButton.SetActive(true);
     }
 
-    private IEnumerator SaveFrameToGalleryCoroutine(Texture2D frame, int index, DateTime timestamp)
+    private IEnumerator SaveFrameToGalleryCoroutine(byte[] rawData, int width, int height, int index, DateTime timestamp)
     {
-        if (frame == null)
-        {
-            Debug.LogError("Frame is null. Cannot save.");
-            yield break;
-        }
+        // Create Texture2D for saving
+        var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        texture.LoadRawTextureData(rawData);
+        texture.Apply();
 
-        // Rotate the frame by 90 degrees
-        Texture2D rotatedFrame = RotateTexture(frame, 90f);
+        // Rotate the frame if needed (optional)
+        var rotatedTexture = RotateTexture(texture, 90f);
 
+        // Save to gallery
         string fileName = $"Frame_{index}_{timestamp:yyyyMMdd_HHmmss}.png";
-
         NativeGallery.Permission permission = NativeGallery.SaveImageToGallery(
-            rotatedFrame,
+            rotatedTexture,
             "VOJO",
             fileName,
             (success, path) =>
@@ -185,8 +161,8 @@ public class CameraManager : MonoBehaviour
             Debug.LogError("Gallery permission not granted. Cannot save frame.");
         }
 
-        // Clean up the rotated frame texture
-        Destroy(rotatedFrame);
+        Destroy(texture);
+        Destroy(rotatedTexture);
 
         yield return null;
     }
@@ -218,38 +194,5 @@ public class CameraManager : MonoBehaviour
         rotatedTexture.Apply();
 
         return rotatedTexture;
-    }
-
-    public void StopCameraFeed()
-    {
-        Debug.Log("Stopping camera feed...");
-        if (webCamTexture != null && webCamTexture.isPlaying)
-        {
-            webCamTexture.Stop();
-            cameraView.texture = null; // Remove the feed from RawImage
-        }
-    }
-
-    public void RestartCameraFeed()
-    {
-        Debug.Log("Restarting camera feed...");
-        if (webCamTexture != null)
-        {
-            webCamTexture.Play();
-            cameraView.texture = webCamTexture; // Reassign the feed to RawImage
-        }
-    }
-
-    void OnDestroy()
-    {
-        if (webCamTexture != null)
-        {
-            webCamTexture.Stop();
-        }
-
-        if (renderTexture != null)
-        {
-            renderTexture.Release();
-        }
     }
 }
